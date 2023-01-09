@@ -88,7 +88,7 @@ def setup_bot(model):
         # Send a reply if it triggers the model
         if confidence > threshold:
                 logger.debug(f'Message is likely a help question with {friendly_confidence}%{friendly_threshold}% confidence')
-                await message.channel.send(f'Hey there! Our bot detected that this may be a help question, which you\'ll get a better response to in #help-and-support, please feel free to ask your question there!', reference=message)
+                await message.channel.send(f'Hey there! Our bot detected that this may be a help question, which you\'ll get a better response to in <#798006228450017290>, please feel free to ask your question there!', reference=message)
         else:
                 logger.debug(f'Message is likely not a help question with {friendly_confidence}%/{friendly_threshold}% confidence')
         
