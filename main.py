@@ -56,7 +56,10 @@ def setup_bot(model):
     @client.event
     async def on_message(message):
         logger.debug(f'Received message in #{message.channel}: {message.content}')
-        if str(message.channel) not in ["general", "development", "bot-test", "hardware-dev", "configurator"] and not hasattr(message.channel, 'parent_id'):
+        supported_channel_names = ["general", "development", "bot-test", "hardware-dev", "configurator"]
+        # The list of parent channels we want to respond to threads in
+        thread_channels = [596350022191415320]
+        if str(message.channel) not in supported_channel_names or (hasattr(message.channel, 'parent_id') and message.channel.parent_id not in thread_channels):
             logger.debug(f'Ignoring message in unmonitored channel {message.channel}')
             return
 
