@@ -1,0 +1,5 @@
+tensorflow
+discord.py
+requests
+loguru
+absl-py
