@@ -155,7 +155,7 @@ def setup_bot(model, db, log_buffer):
                 else:
                     await message.channel.send(f'Nothing to test, please send a message', reference=message)
                     
-            elif command == 'log':
+            elif command == 'log' or command == 'logs':
                 await message.channel.send(log_buffer.dump(), reference=message)
             else:
                 await message.channel.send('''
