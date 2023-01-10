@@ -111,18 +111,18 @@ def setup_bot(model, db):
             logger.info(f'Dropping message in unmonitored channel {message.channel}')
 
         if should_send_response:
-                logger.info(f'Sending response to user {messsage.author} in {message.channel}')
-                # Send a message to the user
-                await message.channel.send(f'Hey there! Our bot is {friendly_confidence}% sure that this is a help question, which you\'ll get a better response to in <#798006228450017290>. Please feel free to ask your question there!', reference=message)
-                # Set the time we last sent this user a message
-                db[str(message.author)] = datetime.now(datetime.timezone.utc)
+            logger.info(f'Sending response to user {messsage.author} in {message.channel}')
+            # Send a message to the user
+            await message.channel.send(f'Hey there! Our bot is {friendly_confidence}% sure that this is a help question, which you\'ll get a better response to in <#798006228450017290>. Please feel free to ask your question there!', reference=message)
+            # Set the time we last sent this user a message
+            db[str(message.author)] = datetime.now(datetime.timezone.utc)
         else:
-                logger.info(f'Not sending response to user {message.author} in {message.channel}')
+            logger.info(f'Not sending response to user {message.author} in {message.channel}')
         
         # Allow for test messages
         if client.user in message.mentions:
-                await message.channel.send(f'{friendly_confidence}%/{friendly_threshold}% confidence', reference=message)
-                logger.debug(f'Test message received with {friendly_confidence}%/{friendly_threshold}% confidence')
+            await message.channel.send(f'{friendly_confidence}%/{friendly_threshold}% confidence', reference=message)
+            logger.debug(f'Test message received with {friendly_confidence}%/{friendly_threshold}% confidence')
 
     return client
 
