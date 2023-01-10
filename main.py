@@ -19,7 +19,7 @@ flags.DEFINE_string('discord_token', '', 'The Discord bot token generated for th
 flags.DEFINE_string('log_level', 'INFO', 'Loguru log level to output to stderr')
 flags.DEFINE_string('db_path', 'bot.shelve', 'Filesystem path to the database we want to use')
 flags.DEFINE_integer('rewarn_threshold_hours', 3, 'How many hours to wait before rewarning the same user')
-flags.DEFINE_integer('log_buffer_size', 25, 'How many log lines to keep in memory')
+flags.DEFINE_integer('log_buffer_size', 10, 'How many log lines to keep in memory')
 flags.DEFINE_string('only_run_in_guild', '', 'If set, the bot will only run in the named Discord server')
 
 def main(argv):
@@ -36,9 +36,9 @@ class BufferLogger:
     def __init__(self):
         self.d = collections.deque(maxlen=FLAGS.log_buffer_size)
     def write(self, msg):
-        self.d.append(msg)
+        self.d.append(msg.strip())
     def dump(self):
-        return "\n".join(self.d)
+        return "```" + "\n".join(self.d) + "```"
 
 def custom_logger():
     return BufferLogger()
@@ -139,7 +139,7 @@ def setup_bot(model, db, log_buffer):
         if client.user in message.mentions:
             should_send_response = False
             words = message.content.split()[1:]
-            logger.debug(f'Test message received with {words}')
+            logger.debug(f'Test message received with commands: {words}')
             if len(words) == 0:
                 # Do nothing
                 logger.debug(f'Received empty mention message')
