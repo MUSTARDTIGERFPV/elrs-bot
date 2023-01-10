@@ -113,7 +113,7 @@ def setup_bot(model, db):
         if should_send_response:
                 logger.info(f'Sending response to user {messsage.author} in {message.channel}')
                 # Send a message to the user
-                await message.channel.send(f'Hey there! Our bot detected that this may be a help question, which you\'ll get a better response to in <#798006228450017290>, please feel free to ask your question there!', reference=message)
+                await message.channel.send(f'Hey there! Our bot is {friendly_confidence}% sure that this is a help question, which you\'ll get a better response to in <#798006228450017290>. Please feel free to ask your question there!', reference=message)
                 # Set the time we last sent this user a message
                 db[str(message.author)] = datetime.now(datetime.timezone.utc)
         else:
