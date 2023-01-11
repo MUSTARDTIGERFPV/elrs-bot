@@ -102,15 +102,21 @@ def setup_bot(model, db, log_buffer, vote_file):
             original_channel = client.get_channel(response_message.reference.channel_id)
             original_message = await original_channel.fetch_message(response_message.reference.message_id)
             logger.debug(f'Received reaction add event: {reaction.emoji.name} on {original_message.content}')
+            original_message_content = re.sub(r'\n', r' ', original_message.content)
+            # Clean message content
+            if client.user.mentioned_in(original_message) and "test" in original_message_content:
+                # Remove @bot test from string
+                original_message_content = " ".join(original_message_content.split(" ")[2:])
+
             if reaction.emoji.name == '👍':
                 logger.info(f'Storing positive reaction for {original_message.content}')
                 os.write(vote_file, '1,'.encode())
-                os.write(vote_file, re.sub(r'\n', r' ', original_message.content).encode())
+                os.write(vote_file, original_message_content.encode())
                 os.write(vote_file, '\n'.encode())
             if reaction.emoji.name == '👎':
                 logger.info(f'Storing negative reaction for {original_message.content}')
                 os.write(vote_file, '1,'.encode())
-                os.write(vote_file, re.sub(r'\n', r' ', original_message.content).encode())
+                os.write(vote_file, original_message_content.encode())
                 os.write(vote_file, '\n'.encode())
 
     @client.event
@@ -146,7 +152,7 @@ def setup_bot(model, db, log_buffer, vote_file):
         elif user_days_old < 365:
             threshold = 0.975
         elif user_days_old < 730:
-            threshold = 0.99
+            threshold = 0.999
         else:
             threshold = 1.0
         friendly_threshold = friendly_percentage(threshold)
@@ -200,8 +206,8 @@ def setup_bot(model, db, log_buffer, vote_file):
                     await message.channel.send(f'Nothing to test, please send a message', reference=message)
                     
             elif command == 'log' or command == 'logs':
-                # Discord limits messages to 4000 characters, we use 6 for the backticks
-                response_length = 4000 - 6
+                # Discord limits messages to 2000 characters, we use 6 for the backticks
+                response_length = 2000 - 6
                 response_content = discord.utils.escape_mentions(log_buffer.dump_up_to_characters(response_length))
                 await message.channel.send('```' + response_content + '```', reference=message)
             elif command == 'help':
@@ -213,13 +219,19 @@ def setup_bot(model, db, log_buffer, vote_file):
                 ''', reference=message)
 
         if should_send_response:
-            logger.info(f'Sending response to user {messsage.author} in {message.guild} #{message.channel}')
+            logger.info(f'Sending response to user {message.author} in {message.guild} #{message.channel}')
             # Send a message to the user
             await message.channel.send(f'Hey there! Our bot is {friendly_confidence}% sure that this is a help question, which you\'ll get a better response to in <#798006228450017290>. Please feel free to ask your question there!\n\nDid I get this right? If so, leave me a 👍. If not, please leave me a 👎. I\'ll use your response to get better.', reference=message)
             # Set the time we last sent this user a message
             db[str(message.author)] = datetime.now(datetime.timezone.utc)
         else:
             logger.debug(f'Not sending response to user {message.author} in {message.guild} #{message.channel}')
+        
+        # Send final disposition message to logs thread in ExpressLRS Discord
+        if message.guild.id == 596350022191415318:
+            channel = client.get_channel(1062766435639758939)
+            content = discord.utils.escape_mentions(message_content_stripped)
+            await channel.send(f'{message.channel.mention} \"{content}\": {friendly_confidence}% / {friendly_threshold}%')
         
     return client
 
@@ -228,7 +240,7 @@ def hours_since(d):
 def days_since(d):
     return hours_since(d) / 24
 def friendly_percentage(n):
-    return round(n * 100)
+    return round(n * 100, 1)
 
 
 if __name__ == "__main__":
