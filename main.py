@@ -1,4 +1,5 @@
 import collections
+import csv
 import datetime
 import os
 import re
@@ -9,6 +10,7 @@ from absl import app, flags
 from loguru import logger
 import discord
 import tensorflow as tf
+import manhole
 
 # Disable GPU processing for the model's inference
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
@@ -22,7 +24,9 @@ flags.DEFINE_string('db_path', 'bot.shelve', 'Filesystem path to the database we
 flags.DEFINE_integer('rewarn_threshold_hours', 3, 'How many hours to wait before rewarning the same user')
 flags.DEFINE_integer('log_buffer_size', 50, 'How many log lines to keep in memory')
 flags.DEFINE_string('only_run_in_guild', '', 'If set, the bot will only run in the named Discord server')
-flags.DEFINE_string('vote_filename', 'votes.txt', 'Filesystem path to a text file where each line is a new entry for a user voting up or down a response')
+flags.DEFINE_string('vote_filename', 'votes.csv', 'Filesystem path to a text file where each line is a new entry for a user voting up or down a response')
+#flags.DEFINE_integer('log_channel_id', 1062766435639758939, 'Discord channel ID to send logs in')
+flags.DEFINE_integer('log_channel_id', 1067470822605864991, 'Discord channel ID to send logs in')
 
 def main(argv):
     ensure_configuration_or_die()
@@ -31,8 +35,8 @@ def main(argv):
     logger.info("Initializing bot")
     model = load_model()
     db = setup_database()
-    vote_file = setup_vote_file()
-    client = setup_bot(model, db, log_buffer, vote_file)
+    client = setup_bot(model, db, log_buffer)
+    manhole.install(patch_fork=False, daemon_connection=True, locals={"client": client, "model": model})
     client.run(FLAGS.discord_token)
 
 class BufferLogger:
@@ -69,9 +73,6 @@ def ensure_configuration_or_die():
         logger.critical("model_path is required configuration")
         exit()
 
-def setup_vote_file():
-    return os.open(FLAGS.vote_filename, os.O_RDWR|os.O_CREAT|os.O_APPEND)
-
 def setup_database():
     return shelve.open(FLAGS.db_path)
 
@@ -79,11 +80,13 @@ def load_model():
     logger.info(f"Loading model from path {FLAGS.model_path}")
     return tf.keras.models.load_model(FLAGS.model_path)
 
-def setup_bot(model, db, log_buffer, vote_file):
+def setup_bot(model, db, log_buffer):
     intents = discord.Intents.default()
     intents.message_content = True
 
     client = discord.Client(intents=intents)
+    vote_file = open(FLAGS.vote_filename, 'a+')
+    votewriter = csv.writer(vote_file, delimiter=',')
 
     @client.event
     async def on_ready():
@@ -96,28 +99,35 @@ def setup_bot(model, db, log_buffer, vote_file):
         channel = client.get_channel(reaction.channel_id)
         response_message = await channel.fetch_message(reaction.message_id)
         logger.debug(f'Received reaction "{reaction.emoji.name}" add event on #{channel} message ID {response_message.id}')
-        # Only process reactions when they're to our own messages
+        original_message_content = ""
+        # Process reactions when they're to our own messages
         if response_message.author == client.user:
-            # Find the message this was in response to
-            original_channel = client.get_channel(response_message.reference.channel_id)
-            original_message = await original_channel.fetch_message(response_message.reference.message_id)
-            logger.debug(f'Received reaction add event: {reaction.emoji.name} on {original_message.content}')
-            original_message_content = re.sub(r'\n', r' ', original_message.content)
-            # Clean message content
-            if client.user.mentioned_in(original_message) and "test" in original_message_content:
-                # Remove @bot test from string
-                original_message_content = " ".join(original_message_content.split(" ")[2:])
+            # This was a response to a user message
+            if response_message.reference is not None:
+                # Find the message this was in response to
+                original_channel = client.get_channel(response_message.reference.channel_id)
+                original_message = await original_channel.fetch_message(response_message.reference.message_id)
+                logger.debug(f'Received reaction add event: {reaction.emoji.name} on {original_message.content}')
+                original_message_content = re.sub(r'\n', r' ', original_message.content)
+                # Clean message content
+                if client.user.mentioned_in(original_message) and "test" in original_message_content:
+                    # Remove @bot test from string
+                    original_message_content = " ".join(original_message_content.split(" ")[2:])
+            # This was a log message
+            elif response_message.channel.id == FLAGS.log_channel_id:
+                regex = re.compile(r'\"(.*)\"')
+                # Strip the filler text
+                original_message_content = regex.findall(response_message.content)[0]
+            # Remove backslashes
+            original_message_content = re.sub(r'\\', '', original_message_content)
 
             if reaction.emoji.name == '👍':
-                logger.info(f'Storing positive reaction for {original_message.content}')
-                os.write(vote_file, '1,'.encode())
-                os.write(vote_file, original_message_content.encode())
-                os.write(vote_file, '\n'.encode())
+                logger.info(f'Storing positive reaction for {original_message_content}')
+                votewriter.writerow([1, original_message_content])
             if reaction.emoji.name == '👎':
-                logger.info(f'Storing negative reaction for {original_message.content}')
-                os.write(vote_file, '1,'.encode())
-                os.write(vote_file, original_message_content.encode())
-                os.write(vote_file, '\n'.encode())
+                logger.info(f'Storing negative reaction for {original_message_content}')
+                votewriter.writerow([0, original_message_content])
+            vote_file.flush()
 
     @client.event
     async def on_message(message):
@@ -144,17 +154,16 @@ def setup_bot(model, db, log_buffer, vote_file):
         if user_days_old < 3:
             threshold = 0.80
         elif user_days_old < 14:
-            threshold = 0.85
+            threshold = 0.825
         elif user_days_old < 30:
+            threshold = 0.850
+        elif user_days_old < int(365*0.5):
             threshold = 0.875
-        elif user_days_old < 180:
+        elif user_days_old < int(365*1.5):
             threshold = 0.925
-        elif user_days_old < 365:
-            threshold = 0.975
-        elif user_days_old < 730:
-            threshold = 0.999
         else:
             threshold = 1.0
+
         friendly_threshold = friendly_percentage(threshold)
         logger.debug(f'User {message.author} has been here for {user_days_old} days, setting threshold={threshold}')
 
@@ -210,6 +219,10 @@ def setup_bot(model, db, log_buffer, vote_file):
                 response_length = 2000 - 6
                 response_content = discord.utils.escape_mentions(log_buffer.dump_up_to_characters(response_length))
                 await message.channel.send('```' + response_content + '```', reference=message)
+            elif command == 'ping' or command == 'status':
+                await message.channel.send(f'''
+                Running as PID {os.getpid()} using model {FLAGS.model_path}
+                ''')
             elif command == 'help':
                 await message.channel.send('''
                 Commands:
@@ -223,13 +236,13 @@ def setup_bot(model, db, log_buffer, vote_file):
             # Send a message to the user
             await message.channel.send(f'Hey there! Our bot is {friendly_confidence}% sure that this is a help question, which you\'ll get a better response to in <#798006228450017290>. Please feel free to ask your question there!\n\nDid I get this right? If so, leave me a 👍. If not, please leave me a 👎. I\'ll use your response to get better.', reference=message)
             # Set the time we last sent this user a message
-            db[str(message.author)] = datetime.now(datetime.timezone.utc)
+            db[str(message.author)] = datetime.datetime.now(datetime.timezone.utc)
         else:
             logger.debug(f'Not sending response to user {message.author} in {message.guild} #{message.channel}')
         
         # Send final disposition message to logs thread in ExpressLRS Discord
         if message.guild.id == 596350022191415318:
-            channel = client.get_channel(1062766435639758939)
+            channel = client.get_channel(FLAGS.log_channel_id)
             content = discord.utils.escape_mentions(message_content_stripped)
             await channel.send(f'{message.channel.mention} \"{content}\": {friendly_confidence}% / {friendly_threshold}%')
         
